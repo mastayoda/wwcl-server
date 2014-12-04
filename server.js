@@ -47,6 +47,10 @@ io.on('connection', function(socket) {
   socketConnectedSetup(socket);
 
   console.log(socket.id);
+  
+  socket.sysInfo.RTTBegin = new Date().getTime();
+  socket.emit("sampleRTT");
+  
   /* All events will be declared here, and then call the corresponding
    * methods. This way we keep the code clean and understandable. */
 
@@ -83,6 +87,13 @@ io.on('connection', function(socket) {
   socket.on('clusterStatusRequest', function() {
     clusterStatusRequest(socket);
   })
+  
+  socket.on('sampleRTTResponse', function() {
+    console.log('sampleRTTResponse');
+    socket.sysInfo.RTTEnd = new Date().getTime();
+    socket.sysInfo.RTT = socket.sysInfo.RTTEnd - socket.sysInfo.RTTBegin;
+    broadcastRTT(socket);
+  });
 
 });
 
@@ -98,15 +109,18 @@ function socketConnectedSetup(socket) {
     clientSockets.push(socket);
     clientSockets.hash[socket.id] = socket;
     console.log("Client connected");
+
   }
   else {
     socket.isClient = false;
     socket.sysInfo = JSON.parse(socket.handshake.query.sysInfo);
     /* Extracting geo data if not behind NAT*/
     socket.sysInfo.geo = geoip.lookup(socket.sysInfo.publicIP);
+    console.log(socket.sysInfo.publicIP);
     sandboxSockets.push(socket);
     sandboxSockets.hash[socket.id] = socket;
     broadcastPipeConnected(socket);
+    
     console.log("SandBox connected");
 
     if (sandboxSockets.length >= intMinimumPipeCountToDeployTopology) {
@@ -128,8 +142,6 @@ function socketConnectedSetup(socket) {
     }
 
     socket.emit("sandboxRTT");
-    //socket.emit("sandboxExecuteSchedule");
-    //socket.emit("sandboxStartSend");
   }
 
 }
@@ -147,6 +159,7 @@ function clusterStatusRequest(socket) {
 
 function jobDeploymentResponse(socket, results) {
 
+  console.log("Response Arrived:" + socket.id);
   /* The results Object contains two properties
    * {clientSocketId, result}*/
   var clientSocket = clientSockets.hash[results.clientSocketId];
@@ -156,6 +169,33 @@ function jobDeploymentResponse(socket, results) {
   if (clientSocket)
     clientSocket.emit("jobExecutionResponse", results);
 
+}
+
+
+function jobDeploymentRequest(socket, job) {
+
+  /* The Job Object contains two properties
+   * {clientSocketId, sdbxs}*/
+    console.log("Request received:" + socket.id);
+  /*Setup Job */
+  runningJobs.push(job);
+  runningJobs.hash[job.clientSocketId] = job;
+
+  /* Execute job sandboxes broadcast in parallel, each sandbox have three
+   * properties, {clientSocketId, sandboxSocketId, jobCode }, where jobCode
+   * is an Object containing the code to be executed */
+  /* Execute in parallel with async */
+  async.each(job.sdbxs, function(sdboxJob) {
+    
+      console.log("Sending request:");
+
+    /* Extracting the sandbox socket and emit*/
+    var sdbxSocket = sandboxSockets.hash[sdboxJob.sandboxSocketId];
+
+    /* If the sandbox is still connected (This is asynchronous) */
+    if (sdbxSocket)
+      sdbxSocket.emit("jobExecutionRequest", sdboxJob)
+  });
 }
 
 function jobDeploymentErrorResponse(socket, error) {
@@ -171,29 +211,6 @@ function jobDeploymentErrorResponse(socket, error) {
 
 }
 
-function jobDeploymentRequest(socket, job) {
-
-  /* The Job Object contains two properties
-   * {clientSocketId, sdbxs}*/
-
-  /*Setup Job */
-  runningJobs.push(job);
-  runningJobs.hash[job.clientSocketId] = job;
-
-  /* Execute job sandboxes broadcast in parallel, each sandbox have three
-   * properties, {clientSocketId, sandboxSocketId, jobCode }, where jobCode
-   * is an Object containing the code to be executed */
-  /* Execute in parallel with async */
-  async.each(job.sdbxs, function(sdboxJob) {
-
-    /* Extracting the sandbox socket and emit*/
-    var sdbxSocket = sandboxSockets.hash[sdboxJob.sandboxSocketId];
-
-    /* If the sandbox is still connected (This is asynchronous) */
-    if (sdbxSocket)
-      sdbxSocket.emit("jobExecutionRequest", sdboxJob)
-  });
-}
 
 
 function sandboxSendScheduleData(socket, packet) {
@@ -267,9 +284,25 @@ function broadcastPipeDisconnected(pSock) {
   });
 }
 
+/* Broadcast RTT */
+function broadcastRTT(pSock) {
+  var pipeInfo = {};
+  pipeInfo.id = pSock.id;
+  pipeInfo.RTT = pSock.sysInfo.RTT;
+  
+  clientSockets.forEach(function(socket) {
+    console.log(pipeInfo.RTT);
+    socket.emit('RTTRefresh', pipeInfo);
+  });
+  
+}
+
 
 /*************************** SERVER CONNECTION SETTING  ************************/
 server.listen(process.env.PORT || 3000, process.env.IP || "0.0.0.0", function() {
   var addr = server.address();
   console.log("World Wide Cluster server listening at", addr.address + ":" + addr.port);
 });
+
+
+
