@@ -45,11 +45,11 @@ io.on('connection', function(socket) {
 
   /* Socket Setup Function */
   socketConnectedSetup(socket);
-
-  console.log(socket.id);
   
+  /*
   socket.sysInfo.RTTBegin = new Date().getTime();
   socket.emit("sampleRTT");
+  */
   
   /* All events will be declared here, and then call the corresponding
    * methods. This way we keep the code clean and understandable. */
@@ -88,12 +88,14 @@ io.on('connection', function(socket) {
     clusterStatusRequest(socket);
   })
   
+  /*
   socket.on('sampleRTTResponse', function() {
     console.log('sampleRTTResponse');
     socket.sysInfo.RTTEnd = new Date().getTime();
     socket.sysInfo.RTT = socket.sysInfo.RTTEnd - socket.sysInfo.RTTBegin;
     broadcastRTT(socket);
   });
+  */
 
 });
 
@@ -108,7 +110,7 @@ function socketConnectedSetup(socket) {
     socket.sysInfo.geo = geoip.lookup(socket.sysInfo.publicIP);
     clientSockets.push(socket);
     clientSockets.hash[socket.id] = socket;
-    console.log("Client connected");
+    console.log("[Client connected]: "+ socket.sysInfo.hostname + " | " +  socket.sysInfo.publicIP  + " | " + new Date().toLocaleString("en-US", {timeZone: "America/New_York"}));
 
   }
   else {
@@ -116,32 +118,33 @@ function socketConnectedSetup(socket) {
     socket.sysInfo = JSON.parse(socket.handshake.query.sysInfo);
     /* Extracting geo data if not behind NAT*/
     socket.sysInfo.geo = geoip.lookup(socket.sysInfo.publicIP);
-    console.log(socket.sysInfo.publicIP);
     sandboxSockets.push(socket);
     sandboxSockets.hash[socket.id] = socket;
     broadcastPipeConnected(socket);
     
-    console.log("SandBox connected");
+    console.log("[SandBox connected]: " + socket.sysInfo.hostname + " | " +  socket.sysInfo.publicIP  + " | " + new Date().toLocaleString("en-US", {timeZone: "America/New_York"}));
 
-    if (sandboxSockets.length >= intMinimumPipeCountToDeployTopology) {
+    // if (sandboxSockets.length >= intMinimumPipeCountToDeployTopology) {
 
-      var pipes = [];
-      console.log("Deploying topology");
+    //   var pipes = [];
+    //   console.log("[Deploying topology]"  + " | " + new Date().toLocaleString("en-US", {timeZone: "America/New_York"}));
 
-      sandboxSockets.forEach(function(p) {
-        var pipeInfo = {};
-        pipeInfo.id = p.id;
-        pipeInfo.sysInfo = p.sysInfo;
-        pipes.push(pipeInfo)
-      });
-      /* Randomizing Server in Topology */
-      var intServer = new Date().getTime() % sandboxSockets.length;
+    //   sandboxSockets.forEach(function(p) {
+    //     var pipeInfo = {};
+    //     pipeInfo.id = p.id;
+    //     pipeInfo.sysInfo = p.sysInfo;
+    //     pipes.push(pipeInfo)
+    //   });
+    //   /* Randomizing Server in Topology */
+    //   var intServer = new Date().getTime() % sandboxSockets.length;
 
-      socket.emit("sandboxDeployTopology", JSON.stringify(pipes));
+    //   socket.emit("sandboxDeployTopology", JSON.stringify(pipes));
 
-    }
-
+    // }
+    
+    /*
     socket.emit("sandboxRTT");
+    */
   }
 
 }
@@ -159,7 +162,7 @@ function clusterStatusRequest(socket) {
 
 function jobDeploymentResponse(socket, results) {
 
-  console.log("Response Arrived:" + socket.id);
+  console.log("[Response Arrived]: " + socket.sysInfo.hostname  + " | " + new Date().toLocaleString("en-US", {timeZone: "America/New_York"}));
   /* The results Object contains two properties
    * {clientSocketId, result}*/
   var clientSocket = clientSockets.hash[results.clientSocketId];
@@ -176,7 +179,7 @@ function jobDeploymentRequest(socket, job) {
 
   /* The Job Object contains two properties
    * {clientSocketId, sdbxs}*/
-    console.log("Request received:" + socket.id);
+    console.log("[Job Request received]: " + socket.sysInfo.hostname  + " | " + new Date().toLocaleString("en-US", {timeZone: "America/New_York"}));
   /*Setup Job */
   runningJobs.push(job);
   runningJobs.hash[job.clientSocketId] = job;
@@ -187,7 +190,7 @@ function jobDeploymentRequest(socket, job) {
   /* Execute in parallel with async */
   async.each(job.sdbxs, function(sdboxJob) {
     
-      console.log("Sending request:");
+      console.log("[Sending Job Request]: " + socket.sysInfo.hostname  + " | " + new Date().toLocaleString("en-US", {timeZone: "America/New_York"}));
 
     /* Extracting the sandbox socket and emit*/
     var sdbxSocket = sandboxSockets.hash[sdboxJob.sandboxSocketId];
@@ -216,7 +219,7 @@ function jobDeploymentErrorResponse(socket, error) {
 function sandboxSendScheduleData(socket, packet) {
 
   var localPacket = JSON.parse(packet);
-  console.log("Receiving Scheduled Data " + localPacket.payload);
+  console.log("[Receiving Scheduled Data]: " + socket.sysInfo.hostname + ", " + localPacket.payload);
   socket.emit('sandboxReceiveScheduleData', JSON.stringify(localPacket));
 }
 
@@ -245,7 +248,7 @@ function disconnect(socket) {
     /* A Client have been disconnected, remove it */
     clientSockets.splice(clientSockets.indexOf(socket), 1);
     delete clientSockets.hash[socket.id];
-    console.log("Removed client socket");
+    console.log("[Client Disconnected]: " + socket.sysInfo.hostname + " | " + new Date().toLocaleString("en-US", {timeZone: "America/New_York"}));
 
   }
   else {
@@ -253,7 +256,7 @@ function disconnect(socket) {
     sandboxSockets.splice(sandboxSockets.indexOf(socket), 1);
     broadcastPipeDisconnected(socket);
     delete sandboxSockets.hash[socket.id];
-    console.log("Removed SandBox socket");
+    console.log("[SandBox Disconnected]: " + socket.sysInfo.hostname + " | " + new Date().toLocaleString("en-US", {timeZone: "America/New_York"}));
   }
 }
 
@@ -301,7 +304,8 @@ function broadcastRTT(pSock) {
 /*************************** SERVER CONNECTION SETTING  ************************/
 server.listen(process.env.PORT || 3000, process.env.IP || "0.0.0.0", function() {
   var addr = server.address();
-  console.log("World Wide Cluster server listening at", addr.address + ":" + addr.port);
+  console.log("[World Wide Cluster server listening at ", addr.address + ":" + addr.port + "]" + " | " + new Date().toLocaleString("en-US", {timeZone: "America/New_York"}));
+  console.log("[CONNECTION LOG]\n");
 });
 
 
